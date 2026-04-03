@@ -1,11 +1,25 @@
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
-import { storage } from "../lib/supabase";
+import { db, isDemo } from "../lib/supabase";
 import { DEFAULT_PLAYERS, DEFAULT_MATCHES, DEFAULT_FEED } from "../data/defaults";
 
 const ClubContext = createContext({});
 export const useClub = () => useContext(ClubContext);
 
-const STORAGE_KEY = "club_data";
+const LS_KEY = "fc_eaglet_data";
+
+/* Local storage helpers for demo mode */
+function lsGet() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+function lsSet(data) {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(data)); } catch {}
+}
+function lsDelete() {
+  localStorage.removeItem(LS_KEY);
+}
 
 export function ClubProvider({ children }) {
   const [loading, setLoading] = useState(true);
@@ -23,23 +37,40 @@ export function ClubProvider({ children }) {
 
   useEffect(() => {
     (async () => {
-      const saved = await storage.get(STORAGE_KEY);
-      if (saved) {
-        setPlayers(saved.players || DEFAULT_PLAYERS);
-        setMatches(saved.matches || DEFAULT_MATCHES);
-        setFeed(saved.feed || DEFAULT_FEED);
-        setSettings(s => ({ ...s, ...saved.settings }));
+      if (isDemo) {
+        const saved = lsGet();
+        if (saved) {
+          setPlayers(saved.players || DEFAULT_PLAYERS);
+          setMatches(saved.matches || DEFAULT_MATCHES);
+          setFeed(saved.feed || DEFAULT_FEED);
+          setSettings(s => ({ ...s, ...saved.settings }));
+        } else {
+          setPlayers(DEFAULT_PLAYERS);
+          setMatches(DEFAULT_MATCHES);
+          setFeed(DEFAULT_FEED);
+        }
       } else {
-        setPlayers(DEFAULT_PLAYERS);
-        setMatches(DEFAULT_MATCHES);
-        setFeed(DEFAULT_FEED);
+        // Load from Supabase
+        const [dbPlayers, dbMatches, dbFeed, dbSettings] = await Promise.all([
+          db.getPlayers(false),
+          db.getMatches(),
+          db.getFeed(),
+          db.getSettings(),
+        ]);
+        setPlayers(dbPlayers.length > 0 ? dbPlayers : DEFAULT_PLAYERS);
+        setMatches(dbMatches.length > 0 ? dbMatches : DEFAULT_MATCHES);
+        setFeed(dbFeed.length > 0 ? dbFeed : DEFAULT_FEED);
+        if (dbSettings) setSettings(s => ({ ...s, ...dbSettings }));
       }
       setLoading(false);
     })();
   }, []);
 
   const persist = useCallback(async (p, m, f, s) => {
-    await storage.set(STORAGE_KEY, { players: p, matches: m, feed: f, settings: s });
+    if (isDemo) {
+      lsSet({ players: p, matches: m, feed: f, settings: s });
+    }
+    // When using Supabase, individual operations handle their own persistence
   }, []);
 
   const updatePlayers = (next) => { setPlayers(next); persist(next, matches, feed, settings); };
@@ -49,10 +80,11 @@ export function ClubProvider({ children }) {
     const merged = { ...settings, ...next };
     setSettings(merged);
     persist(players, matches, feed, merged);
+    if (!isDemo) db.saveSettings(merged);
   };
 
   const resetAll = async () => {
-    await storage.delete(STORAGE_KEY);
+    if (isDemo) lsDelete();
     setPlayers(DEFAULT_PLAYERS);
     setMatches(DEFAULT_MATCHES);
     setFeed(DEFAULT_FEED);

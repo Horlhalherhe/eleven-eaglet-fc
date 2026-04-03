@@ -6,6 +6,7 @@ import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import PublicView from "./pages/PublicView";
 import Settings from "./pages/Settings";
+import JoinPage from "./pages/JoinPage";
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -30,6 +31,7 @@ export default function App() {
     <Routes>
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
+      <Route path="/join" element={<JoinPage />} />
       <Route path="/squad" element={<PublicView tab="squad" />} />
       <Route path="/matches" element={<PublicView tab="matches" />} />
       <Route path="/stats" element={<PublicView tab="stats" />} />

@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useClub } from "../contexts/ClubContext";
 import { Avatar, StatusBadge, formatName } from "../components/shared";
 import { SQUAD_SECTIONS, POS_OPTIONS, POSITIONS_MAP, EVENT_TYPES } from "../data/defaults";
+import { db, isDemo } from "../lib/supabase";
 
 /* ─── Sub-components ─── */
 function Modal({ title, onClose, children }) {
@@ -55,6 +56,31 @@ export default function Dashboard() {
   const [newEvent, setNewEvent] = useState({ type: "goal", playerId: "", minute: "" });
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [newPost, setNewPost] = useState("");
+  const [pendingPlayers, setPendingPlayers] = useState([]);
+
+  // Fetch pending players from Supabase
+  useEffect(() => {
+    if (isDemo) return;
+    const fetchPending = async () => {
+      const pending = await db.getPendingPlayers();
+      setPendingPlayers(pending);
+    };
+    fetchPending();
+  }, [players]);
+
+  const approvePlayer = async (player) => {
+    if (isDemo) return;
+    await db.approvePlayer(player.id);
+    setPendingPlayers(prev => prev.filter(p => p.id !== player.id));
+    // Add to local state too
+    updatePlayers([...players, { ...player, approved: true }]);
+  };
+
+  const rejectPlayer = async (id) => {
+    if (isDemo) return;
+    await db.deletePlayer(id);
+    setPendingPlayers(prev => prev.filter(p => p.id !== id));
+  };
 
   const { formation = "4-3-3", lineup = {} } = settings;
   const played = matches.filter(m => m.result);
@@ -193,6 +219,56 @@ export default function Dashboard() {
                   </select>
                   <button onClick={addPlayer} className="btn-primary whitespace-nowrap !py-2">Add</button>
                 </div>
+              </div>
+            )}
+
+            {/* Pending Registrations */}
+            {pendingPlayers.length > 0 && (
+              <div className="mb-5 p-3 rounded-xl bg-brand-400/5 border border-brand-400/15">
+                <h3 className="text-xs font-bold text-brand-400 uppercase tracking-wider mb-3">
+                  Pending Registrations ({pendingPlayers.length})
+                </h3>
+                <div className="space-y-2">
+                  {pendingPlayers.map(p => (
+                    <div key={p.id} className="flex items-center gap-3 p-2.5 rounded-lg bg-white/[0.03] border border-white/5">
+                      {p.photo_url ? (
+                        <img src={p.photo_url} alt={p.name} className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
+                      ) : (
+                        <Avatar name={p.name} size={40} fontSize={13} number={p.number} />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-bold">{p.name}</div>
+                        <div className="text-[10px] text-slate-500">
+                          #{p.number} · {p.position} · {p.preferred_foot} foot
+                          {p.phone && ` · ${p.phone}`}
+                        </div>
+                      </div>
+                      <div className="flex gap-1.5 flex-shrink-0">
+                        <button onClick={() => approvePlayer(p)}
+                          className="w-8 h-8 rounded-lg bg-emerald-400/15 text-emerald-400 flex items-center justify-center text-sm font-bold hover:bg-emerald-400/25 transition-colors"
+                          title="Approve">✓</button>
+                        <button onClick={() => rejectPlayer(p.id)}
+                          className="w-8 h-8 rounded-lg bg-red-400/15 text-red-400 flex items-center justify-center text-sm font-bold hover:bg-red-400/25 transition-colors"
+                          title="Reject">✕</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Share join link */}
+            {!isDemo && (
+              <div className="mb-4 p-3 rounded-xl bg-white/[0.02] border border-white/5 flex items-center gap-3">
+                <div className="text-lg">🔗</div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[11px] text-slate-500 font-semibold">Share this link with your players:</div>
+                  <div className="text-xs text-brand-400 font-bold truncate">{window.location.origin}/join</div>
+                </div>
+                <button onClick={() => navigator.clipboard.writeText(`${window.location.origin}/join`)}
+                  className="text-[10px] font-bold text-slate-400 border border-white/10 px-2 py-1 rounded hover:bg-white/5 transition-colors flex-shrink-0">
+                  Copy
+                </button>
               </div>
             )}
 
