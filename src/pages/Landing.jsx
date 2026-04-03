@@ -54,6 +54,7 @@ export default function Landing() {
             <div className="flex flex-wrap justify-center gap-4">
               <Link to="/squad" className="btn-primary text-base px-8 py-3">View Squad</Link>
               <Link to="/matches" className="btn-secondary text-base px-8 py-3">Fixtures & Results</Link>
+              <Link to="/join" className="text-sm text-brand-400 font-bold hover:text-brand-300 transition-colors underline underline-offset-4 w-full text-center mt-2">Are you a player? Join the squad →</Link>
             </div>
           </div>
         </div>
@@ -61,9 +62,8 @@ export default function Landing() {
 
       {/* Quick Stats */}
       <section className="max-w-6xl mx-auto px-6 pb-16">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-3 gap-4">
           {[
-            { label: "Squad Size", value: players.length, icon: "👥" },
             { label: "Matches Played", value: played.length, icon: "📋" },
             { label: "Wins", value: wins, icon: "🏆" },
             { label: "Goals Scored", value: totalGoals, icon: "⚽" },
