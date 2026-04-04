@@ -102,4 +102,42 @@ export const db = {
     if (!supabase) return;
     await supabase.from("club_settings").upsert({ key: "main", value: settings }, { onConflict: "key" });
   },
+
+  // Admins
+  async isAdmin(email) {
+    if (!supabase) return true; // demo mode = everyone is admin
+    const { data } = await supabase.from("admins").select("*").eq("email", email.toLowerCase()).single();
+    return !!data;
+  },
+
+  async getAdmins() {
+    if (!supabase) return [];
+    const { data } = await supabase.from("admins").select("*").order("created_at");
+    return data || [];
+  },
+
+  async inviteAdmin(email, invitedBy) {
+    if (!supabase) return null;
+    const { data, error } = await supabase.from("admins").insert({
+      email: email.toLowerCase().trim(),
+      role: "admin",
+      invited_by: invitedBy,
+    }).select().single();
+    if (error) throw error;
+    return data;
+  },
+
+  async removeAdmin(id) {
+    if (!supabase) return;
+    await supabase.from("admins").delete().eq("id", id);
+  },
+
+  async makeOwner(email) {
+    if (!supabase) return;
+    // Add as admin with owner role
+    await supabase.from("admins").upsert({
+      email: email.toLowerCase().trim(),
+      role: "owner",
+    }, { onConflict: "email" });
+  },
 };

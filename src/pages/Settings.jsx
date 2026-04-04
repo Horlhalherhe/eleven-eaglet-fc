@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useClub } from "../contexts/ClubContext";
+import { useAuth } from "../contexts/AuthContext";
+import { db, isDemo } from "../lib/supabase";
 
 const COLOR_PRESETS = [
   { name: "Navy/Gold", primary: "#1a2744", accent: "#d4a843" },
@@ -15,9 +17,23 @@ const COLOR_PRESETS = [
 
 export default function Settings() {
   const { settings, updateSettings, resetAll } = useClub();
+  const { user } = useAuth();
   const [clubName, setClubName] = useState(settings.clubName);
   const [coachName, setCoachName] = useState(settings.coachName);
   const [saved, setSaved] = useState(false);
+  const [admins, setAdmins] = useState([]);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteError, setInviteError] = useState("");
+  const [inviteSuccess, setInviteSuccess] = useState("");
+
+  useEffect(() => {
+    if (isDemo) return;
+    const fetchAdmins = async () => {
+      const data = await db.getAdmins();
+      setAdmins(data);
+    };
+    fetchAdmins();
+  }, []);
 
   const handleSave = () => {
     updateSettings({ clubName, coachName });
@@ -27,6 +43,32 @@ export default function Settings() {
 
   const handleColorChange = (primary, accent) => {
     updateSettings({ primaryColor: primary, accentColor: accent });
+  };
+
+  const handleInvite = async () => {
+    const email = inviteEmail.trim().toLowerCase();
+    if (!email) { setInviteError("Enter an email address"); return; }
+    if (!email.includes("@")) { setInviteError("Enter a valid email"); return; }
+    if (admins.find(a => a.email === email)) { setInviteError("This email is already an admin"); return; }
+
+    setInviteError("");
+    try {
+      await db.inviteAdmin(email, user?.email || "owner");
+      const updated = await db.getAdmins();
+      setAdmins(updated);
+      setInviteEmail("");
+      setInviteSuccess(`${email} has been invited!`);
+      setTimeout(() => setInviteSuccess(""), 3000);
+    } catch (err) {
+      setInviteError(err.message || "Failed to invite admin");
+    }
+  };
+
+  const handleRemoveAdmin = async (admin) => {
+    if (admin.role === "owner") { setInviteError("Can't remove the owner"); return; }
+    if (!window.confirm(`Remove ${admin.email} as admin?`)) return;
+    await db.removeAdmin(admin.id);
+    setAdmins(admins.filter(a => a.id !== admin.id));
   };
 
   return (
@@ -51,7 +93,7 @@ export default function Settings() {
               </div>
               <div>
                 <label className="text-xs text-slate-500 font-semibold uppercase tracking-wider mb-1.5 block">Coach Name</label>
-                <input value={coachName} onChange={e => setCoachName(e.target.value)} className="input-field" placeholder="Martinez" />
+                <input value={coachName} onChange={e => setCoachName(e.target.value)} className="input-field" placeholder="Coach" />
               </div>
               <button onClick={handleSave} className="btn-primary w-full text-center">
                 {saved ? "✓ Saved!" : "Save Changes"}
@@ -68,15 +110,13 @@ export default function Settings() {
               <label className="btn-secondary inline-block cursor-pointer text-sm">
                 Upload Image
                 <input type="file" accept="image/*" className="hidden" onChange={(e) => {
-                  // Logo upload would be handled here with Supabase Storage
                   const file = e.target.files?.[0];
                   if (file) {
                     console.log("Logo upload:", file.name);
-                    // TODO: Upload to Supabase Storage
                   }
                 }} />
               </label>
-              <p className="text-[10px] text-slate-600 mt-2">PNG or SVG, max 2MB. Will appear on landing page and nav.</p>
+              <p className="text-[10px] text-slate-600 mt-2">PNG or SVG, max 2MB.</p>
             </div>
           </section>
 
@@ -103,6 +143,67 @@ export default function Settings() {
               ))}
             </div>
           </section>
+
+          {/* Admin Management */}
+          {!isDemo && (
+            <section>
+              <h2 className="text-xs text-slate-500 font-bold uppercase tracking-wider mb-4">Admin Management</h2>
+
+              {/* Invite */}
+              <div className="card p-4 mb-4">
+                <p className="text-sm text-slate-400 mb-3">Invite someone to manage the club. They'll be able to sign up and access the dashboard.</p>
+                <div className="flex gap-2">
+                  <input
+                    type="email"
+                    value={inviteEmail}
+                    onChange={e => { setInviteEmail(e.target.value); setInviteError(""); }}
+                    onKeyDown={e => { if (e.key === "Enter") handleInvite(); }}
+                    className="input-field flex-1"
+                    placeholder="email@example.com"
+                  />
+                  <button onClick={handleInvite} className="btn-primary whitespace-nowrap !py-2 !px-4">
+                    Invite
+                  </button>
+                </div>
+                {inviteError && (
+                  <div className="mt-2 text-xs text-red-400">{inviteError}</div>
+                )}
+                {inviteSuccess && (
+                  <div className="mt-2 text-xs text-emerald-400">{inviteSuccess}</div>
+                )}
+              </div>
+
+              {/* Admin List */}
+              <div className="card divide-y divide-white/[0.04]">
+                {admins.length === 0 && (
+                  <div className="p-4 text-sm text-slate-500 text-center">No admins yet. You'll be added as owner automatically.</div>
+                )}
+                {admins.map(admin => (
+                  <div key={admin.id} className="flex items-center gap-3 px-4 py-3">
+                    <div className="w-8 h-8 rounded-lg bg-brand-400/15 flex items-center justify-center text-xs font-bold text-brand-400">
+                      {admin.role === "owner" ? "👑" : "🛡"}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-semibold truncate">{admin.email}</div>
+                      <div className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">
+                        {admin.role === "owner" ? "Owner" : "Admin"}
+                        {admin.invited_by && admin.role !== "owner" && ` · Invited by ${admin.invited_by}`}
+                      </div>
+                    </div>
+                    {admin.role !== "owner" && (
+                      <button onClick={() => handleRemoveAdmin(admin)}
+                        className="w-7 h-7 rounded-lg bg-red-400/10 text-red-400 flex items-center justify-center text-xs hover:bg-red-400/20 transition-colors"
+                        title="Remove admin">✕</button>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <p className="text-[10px] text-slate-600 mt-2">
+                Invited admins need to sign up at <span className="text-brand-400 font-bold">/login</span> with the invited email to get access.
+              </p>
+            </section>
+          )}
 
           {/* Danger Zone */}
           <section>
